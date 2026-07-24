@@ -321,6 +321,13 @@ contains only the standard library. `golang.org/x/oauth2` appears in `go.mod` so
 test dependency of `internal/integration`, which uses it to prove the drop-in swap works
 against a real client library.
 
+Those same commands run in CI on every pull request
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)), alongside a second job that
+builds the container image and waits for its built-in `HEALTHCHECK` to report healthy —
+the scratch runtime stage, `CGO_ENABLED=0` and the CA bundle can only fail at run time,
+where no Go test can see them. CI is deliberately pull-request-only, so a change pushed
+straight to a branch is never checked.
+
 The authoritative design document is [`docs/DESIGN.md`](docs/DESIGN.md); the verified
 Strava wire contract is [`docs/STRAVA-CONTRACT.md`](docs/STRAVA-CONTRACT.md).
 
