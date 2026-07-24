@@ -572,9 +572,9 @@ func assertOAuthHardening(t *testing.T, res *result) {
 // so that a change to the writers shows up as an integration failure.
 const (
 	faultInvalidClientID     = `{"message":"Bad Request","errors":[{"resource":"Application","field":"client_id","code":"invalid"}]}`
-	faultInvalidClientSecret = `{"message":"Bad Request","errors":[{"resource":"Application","field":"client_secret","code":"invalid"}]}`
+	faultInvalidClientSecret = `{"message":"Authorization Error","errors":[{"resource":"Application","field":"","code":"invalid"}]}`
 	faultInvalidCode         = `{"message":"Bad Request","errors":[{"resource":"AuthorizationCode","field":"code","code":"invalid"}]}`
-	faultUnauthorized        = `{"message":"Authorization Error","errors":[{"resource":"Application","field":"client_id","code":"invalid"}]}`
+	faultUnauthorized        = `{"message":"Authorization Error","errors":[]}`
 	faultUpstreamUnavailable = `{"message":"Bad Gateway","errors":[{"resource":"Upstream","field":"strava","code":"unavailable"}]}`
 	faultUpstreamTimeout     = `{"message":"Gateway Timeout","errors":[{"resource":"Upstream","field":"strava","code":"timeout"}]}`
 )

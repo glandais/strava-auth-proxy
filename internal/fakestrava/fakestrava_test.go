@@ -315,25 +315,31 @@ func TestTokenCredentialFaults(t *testing.T) {
 	s := fakestrava.New(t, realID, realSecret)
 	code := codeFor(t, s)
 
+	// Real Strava is asymmetric here, and the fake must be too: an unknown
+	// client_id is 400 "Bad Request" naming the field, while a known client_id
+	// with a wrong secret is 401 "Authorization Error" naming none. Verified
+	// live against a real application id; see docs/STRAVA-CONTRACT.md.
 	tests := []struct {
-		name  string
-		form  url.Values
-		field string
+		name    string
+		form    url.Values
+		status  int
+		message string
+		field   string
 	}{
 		{
 			"wrong client_id",
 			url.Values{"client_id": {"90001"}, "client_secret": {realSecret}, "code": {code}, "grant_type": {"authorization_code"}},
-			"client_id",
+			http.StatusBadRequest, "Bad Request", "client_id",
 		},
 		{
 			"wrong client_secret",
 			url.Values{"client_id": {realID}, "client_secret": {"virtual-secret"}, "code": {code}, "grant_type": {"authorization_code"}},
-			"client_secret",
+			http.StatusUnauthorized, "Authorization Error", "",
 		},
 		{
 			"unknown grant_type",
 			url.Values{"client_id": {realID}, "client_secret": {realSecret}, "grant_type": {"password"}},
-			"grant_type",
+			http.StatusBadRequest, "Bad Request", "grant_type",
 		},
 	}
 	for _, tc := range tests {
@@ -341,14 +347,14 @@ func TestTokenCredentialFaults(t *testing.T) {
 			resp := postForm(t, s, "/oauth/token", tc.form, nil)
 			var f faultBody
 			decode(t, resp, &f)
-			if resp.StatusCode != http.StatusBadRequest {
-				t.Errorf("status = %d, want 400", resp.StatusCode)
+			if resp.StatusCode != tc.status {
+				t.Errorf("status = %d, want %d", resp.StatusCode, tc.status)
 			}
-			if f.Message != "Bad Request" {
-				t.Errorf("message = %q, want Bad Request", f.Message)
+			if f.Message != tc.message {
+				t.Errorf("message = %q, want %q", f.Message, tc.message)
 			}
 			if len(f.Errors) != 1 || f.Errors[0].Resource != "Application" || f.Errors[0].Field != tc.field {
-				t.Errorf("fault = %+v, want Application/%s/invalid", f, tc.field)
+				t.Errorf("fault = %+v, want Application/%q/invalid", f, tc.field)
 			}
 		})
 	}

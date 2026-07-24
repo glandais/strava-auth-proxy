@@ -97,12 +97,18 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 	s.tokenRequests++
 	s.mu.Unlock()
 
+	// The two credential failures are NOT symmetric on real Strava, and the
+	// asymmetry was verified live against a real application id (see
+	// docs/STRAVA-CONTRACT.md). An unknown client_id is a 400 "Bad Request"
+	// naming the field; a known client_id presented with a wrong secret is a
+	// 401 "Authorization Error" whose field is empty. Reproducing both here is
+	// what lets the integration suite prove the proxy relays each one verbatim.
 	if r.Form.Get("client_id") != s.realClientID {
 		writeFault(w, http.StatusBadRequest, "Bad Request", faultError{"Application", "client_id", "invalid"})
 		return
 	}
 	if r.Form.Get("client_secret") != s.realClientSecret {
-		writeFault(w, http.StatusBadRequest, "Bad Request", faultError{"Application", "client_secret", "invalid"})
+		writeFault(w, http.StatusUnauthorized, "Authorization Error", faultError{"Application", "", "invalid"})
 		return
 	}
 
@@ -213,7 +219,10 @@ func (s *Server) handleDeauthorize(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRevoke(w http.ResponseWriter, r *http.Request) {
 	id, secret, ok := r.BasicAuth()
 	if !ok || id != s.realClientID || secret != s.realClientSecret {
-		writeFault(w, http.StatusUnauthorized, "Authorization Error", faultError{"Application", "client_id", "invalid"})
+		// Verified live: revoke answers with an EMPTY errors array for both an
+		// unknown client_id and a wrong secret, so unlike the token endpoints
+		// it is not an oracle for which applications exist.
+		writeFault(w, http.StatusUnauthorized, "Authorization Error")
 		return
 	}
 	token := r.Form.Get("token")

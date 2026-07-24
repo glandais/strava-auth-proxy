@@ -15,9 +15,9 @@ import (
 // Golden Fault bodies, byte-for-byte as internal/fault writes them.
 const (
 	goldenInvalidClientID     = `{"message":"Bad Request","errors":[{"resource":"Application","field":"client_id","code":"invalid"}]}`
-	goldenInvalidClientSecret = `{"message":"Bad Request","errors":[{"resource":"Application","field":"client_secret","code":"invalid"}]}`
+	goldenInvalidClientSecret = `{"message":"Authorization Error","errors":[{"resource":"Application","field":"","code":"invalid"}]}`
 	goldenInvalidCode         = `{"message":"Bad Request","errors":[{"resource":"AuthorizationCode","field":"code","code":"invalid"}]}`
-	goldenUnauthorized        = `{"message":"Authorization Error","errors":[{"resource":"Application","field":"client_id","code":"invalid"}]}`
+	goldenUnauthorized        = `{"message":"Authorization Error","errors":[]}`
 	goldenUnavailable         = `{"message":"Bad Gateway","errors":[{"resource":"Upstream","field":"strava","code":"unavailable"}]}`
 	goldenTimeout             = `{"message":"Gateway Timeout","errors":[{"resource":"Upstream","field":"strava","code":"timeout"}]}`
 )
@@ -177,6 +177,9 @@ func TestTokenProxyMintedFaults(t *testing.T) {
 		name string
 		form func(t *testing.T) url.Values
 		body string
+		// status defaults to 400; the wrong-secret rows are 401 because that
+		// is what real Strava answers for a client that exists.
+		status int
 	}{
 		{
 			name: "unknown client_id",
@@ -195,21 +198,24 @@ func TestTokenProxyMintedFaults(t *testing.T) {
 			form: func(*testing.T) url.Values {
 				return url.Values{"client_id": {virtualID}, "client_secret": {"nope"}, "grant_type": {"refresh_token"}}
 			},
-			body: goldenInvalidClientSecret,
+			body:   goldenInvalidClientSecret,
+			status: http.StatusUnauthorized,
 		},
 		{
 			name: "missing client_secret",
 			form: func(*testing.T) url.Values {
 				return url.Values{"client_id": {virtualID}, "grant_type": {"refresh_token"}}
 			},
-			body: goldenInvalidClientSecret,
+			body:   goldenInvalidClientSecret,
+			status: http.StatusUnauthorized,
 		},
 		{
 			name: "another client's secret",
 			form: func(*testing.T) url.Values {
 				return url.Values{"client_id": {virtualID}, "client_secret": {otherSecret}, "grant_type": {"refresh_token"}}
 			},
-			body: goldenInvalidClientSecret,
+			body:   goldenInvalidClientSecret,
+			status: http.StatusUnauthorized,
 		},
 		{
 			name: "malformed code",
@@ -253,9 +259,13 @@ func TestTokenProxyMintedFaults(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			want := tc.status
+			if want == 0 {
+				want = http.StatusBadRequest
+			}
 			fake, _, h := newTestSetup(t)
 			rec := do(h, postForm("/oauth/token", tc.form(t)))
-			assertGolden(t, rec, http.StatusBadRequest, tc.body)
+			assertGolden(t, rec, want, tc.body)
 			if fake.count() != 0 {
 				t.Errorf("upstream contacted %d times on a locally rejected exchange", fake.count())
 			}

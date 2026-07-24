@@ -324,25 +324,16 @@ against a real client library.
 The authoritative design document is [`docs/DESIGN.md`](docs/DESIGN.md); the verified
 Strava wire contract is [`docs/STRAVA-CONTRACT.md`](docs/STRAVA-CONTRACT.md).
 
-> **Note on error status codes — verified 2026-07-24.** Bad credentials on the token
-> endpoints return **`400`**, not the `401` that one documentation source claimed. This was
-> checked against real Strava with deliberately invalid values; the response is byte-identical
-> to the proxy's `invalid_client_id` golden. Details of every probe are in
-> [`docs/STRAVA-CONTRACT.md`](docs/STRAVA-CONTRACT.md). No change was needed.
+> **Note on error status codes — verified against real Strava, 2026-07-24.** The token
+> endpoints are **asymmetric**, and the proxy reproduces the asymmetry rather than tidying
+> it up: an **unknown** `client_id` is a `400 Bad Request` naming the field, while a
+> **known** `client_id` presented with a wrong `client_secret` is a `401 Authorization
+> Error` whose `field` is empty. `/oauth/revoke` differs again — bad Basic credentials
+> return `401` with an *empty* errors array for both cases, so revoke leaks nothing about
+> which applications exist while the token endpoints do. Every probe is recorded in
+> [`docs/STRAVA-CONTRACT.md`](docs/STRAVA-CONTRACT.md).
 >
-> One sub-case remains open, and it needs a **real** Strava application id to settle: whether
-> a *valid* `client_id` with a *wrong* `client_secret` reports `"field":"client_secret"` or
-> just `"field":"client_id"`. Every probe with an unknown id returned `client_id`, even when
-> `client_secret` was omitted entirely, which suggests Strava's error may be generic. Check it
-> with your own app id (the secret below is deliberately wrong, so nothing is exposed):
->
-> ```sh
-> curl -sS -X POST https://www.strava.com/oauth/token \
->   -d "client_id=<your real app id>&client_secret=deliberately-wrong&grant_type=refresh_token&refresh_token=x"
-> ```
->
-> If it reports `client_id`, drop `WriteInvalidClientSecret` from
-> `internal/fault/fault.go` and have `internal/oauth/token.go` return the `client_id` fault
-> for both failure modes. That would also be a small security win: the proxy would stop
-> acting as an oracle for which virtual `client_id`s exist, and the constant-time secret
-> comparison would no longer be undercut by a response body that names the failing field.
+> This matters for drop-in fidelity: a client library that treats `401` as "re-authenticate"
+> and `400` as "fatal misconfiguration" takes a different branch depending on which one it
+> gets. It also means the proxy is deliberately an oracle for which virtual `client_id`s
+> exist — because real Strava is.

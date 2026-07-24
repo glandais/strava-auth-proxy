@@ -111,14 +111,14 @@ Params accepted as `application/x-www-form-urlencoded` body **or** query string 
 | Case | Origin | Status / body |
 |---|---|---|
 | bad virtual `client_id` | proxy | **`400`** `{"message":"Bad Request","errors":[{"resource":"Application","field":"client_id","code":"invalid"}]}` |
-| bad virtual `client_secret` | proxy | **`400`** same body with `"field":"client_secret"` |
+| bad virtual `client_secret` (client exists) | proxy | **`401`** `{"message":"Authorization Error","errors":[{"resource":"Application","field":"","code":"invalid"}]}` — verified live; see the note below |
 | malformed/expired/foreign-client wrapped code | proxy | `400` `{"message":"Bad Request","errors":[{"resource":"AuthorizationCode","field":"code","code":"invalid"}]}` |
 | Strava rejects code / refresh token | Strava, relayed | Strava's own Fault, status + body verbatim |
 | unknown/missing `grant_type` | Strava, relayed | forwarded upstream (with real creds substituted only after virtual creds validate); Strava's canonical error returned — no proxy-minted grant_type fault |
 | Strava unreachable | proxy | `502` `{"message":"Bad Gateway","errors":[{"resource":"Upstream","field":"strava","code":"unavailable"}]}` |
 | Strava timeout | proxy | `504` `{"message":"Gateway Timeout","errors":[{"resource":"Upstream","field":"strava","code":"timeout"}]}` |
 
-> The reference tables in this repo record 401 as "observed" for bad token-endpoint credentials in one source and 400 in another; drop-in client libraries switch on this. **Implementation step 0 includes a one-time verification against live Strava** (deliberately bad creds on `/oauth/token`) and the observed status+body pair is locked into the golden tests; the design's working assumption pending that check is **400** with the body above. Whatever live Strava does is the contract.
+> **Resolved 2026-07-24 against live Strava** (this supersedes the design's original working assumption of a symmetric 400). The token endpoints are asymmetric: an **unknown** `client_id` is `400 "Bad Request"` naming the field, a **known** `client_id` with a wrong secret is `401 "Authorization Error"` with an empty `field`. `/oauth/revoke` is `401` with an empty errors array for both. All three shapes are implemented, golden-tested, and mirrored in `internal/fakestrava`; the probe log is in `docs/STRAVA-CONTRACT.md`. The consequence for §2.3's timing note below is that the disclosure it accepts is now known to be real Strava's behaviour rather than an assumption.
 
 **Timing posture (coherent, no theater):** stored virtual secrets are SHA-256 pre-hashed; the presented secret is hashed and compared with `crypto/subtle.ConstantTimeCompare` (equal-length inputs by construction). The Fault body deliberately discloses `client_id` vs `client_secret` for Strava fidelity, so we make **no claim** that unknown-id is indistinguishable from wrong-secret — the constant-time compare exists to prevent byte-position secret recovery, not to hide which field failed.
 

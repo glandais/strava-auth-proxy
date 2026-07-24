@@ -53,10 +53,14 @@ func TestWriters(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
+			// 401, not 400: real Strava distinguishes an unknown client_id
+			// (400 "Bad Request") from a known one presented with a wrong
+			// secret (401 "Authorization Error"). Verified live against a real
+			// application id; see docs/STRAVA-CONTRACT.md.
 			name:       "invalid client_secret",
 			golden:     "invalid_client_secret.json",
 			write:      fault.WriteInvalidClientSecret,
-			wantStatus: http.StatusBadRequest,
+			wantStatus: http.StatusUnauthorized,
 		},
 		{
 			name:       "invalid code",

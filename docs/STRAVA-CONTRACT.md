@@ -177,7 +177,8 @@ Known auth-specific instances (observed/canonical behavior):
 
 | Situation | Status | Body |
 |---|---|---|
-| Invalid `client_id`/`client_secret` on token endpoints | **400** (verified, see below) | `{"message":"Bad Request","errors":[{"resource":"Application","field":"client_id","code":"invalid"}]}` |
+| Unknown `client_id` on token endpoints | **400** (verified, see below) | `{"message":"Bad Request","errors":[{"resource":"Application","field":"client_id","code":"invalid"}]}` |
+| Known `client_id`, wrong `client_secret` | **401** (verified, see below) | `{"message":"Authorization Error","errors":[{"resource":"Application","field":"","code":"invalid"}]}` |
 | Invalid/expired/reused authorization `code` | 400 | `{"message":"Bad Request","errors":[{"resource":"AuthorizationCode","field":"code","code":"invalid"}]}` |
 | Invalid/revoked refresh token | 400 | `{"message":"Bad Request","errors":[{"resource":"RefreshToken","field":"refresh_token","code":"invalid"}]}` |
 | Missing/expired/invalid access token on API call | 401 | `{"message":"Authorization Error","errors":[{"resource":"Athlete","field":"access_token","code":"invalid"}]}` |
@@ -203,20 +204,43 @@ Every one of the following returned **`400`** with a byte-identical body:
 | `grant_type` omitted / unknown `grant_type` | `/oauth/token` |
 | empty request body | `/oauth/token` |
 
-So the `401` recorded by one documentation source is wrong for these endpoints, and the
-proxy's `400` is correct. Two consequences worth noting:
+Every one of those probes used an `client_id` that does not exist.
 
-1. **Strava's token-endpoint credential error is generic.** A missing `client_id`, an
-   unknown `client_id`, a missing `client_secret` and a wrong `grant_type` all produce the
-   *same* `field: "client_id"` body. No probe was able to elicit `field: "client_secret"`.
-2. **Not settled:** whether a *valid* `client_id` with a wrong `client_secret` yields
-   `field: "client_secret"` — that case needs a real application id. See the note in
-   `README.md` for the one-command check and what to change if it turns out to be
-   `client_id`.
+### Settled with a real application id (2026-07-24)
+
+Re-probed with a **real** Strava application id and a deliberately wrong secret. This
+overturns the reading above: both documentation sources were right, about different cases.
+The token endpoints are **asymmetric**.
+
+| Case | Status | Body |
+|---|---|---|
+| **Unknown** `client_id` | `400` | `{"message":"Bad Request","errors":[{"resource":"Application","field":"client_id","code":"invalid"}]}` |
+| **Known** `client_id`, wrong `client_secret` | `401` | `{"message":"Authorization Error","errors":[{"resource":"Application","field":"","code":"invalid"}]}` |
+
+Note the empty `field` on the 401 — Strava names the failing field only when the
+application is unknown. Both shapes were observed identically on `/oauth/token` and
+`/api/v3/oauth/token`, for both `authorization_code` and `refresh_token` grants.
+
+`POST /oauth/revoke` behaves differently again: bad HTTP Basic credentials return `401`
+with an **empty errors array**, `{"message":"Authorization Error","errors":[]}`, for both an
+unknown `client_id` and a wrong secret. Revoke is therefore not an oracle for which
+applications exist, while the token endpoints are.
+
+Consequences for the proxy, all now implemented:
+
+- `fault.WriteInvalidClientID` → `400`, unchanged.
+- `fault.WriteInvalidClientSecret` → `401` `"Authorization Error"` with an empty `field`.
+- `fault.WriteUnauthorized` (revoke) → `401` with an empty errors array.
+- `internal/fakestrava` reproduces all three, so the integration suite exercises the real
+  shapes rather than a convenient fiction.
+
+The status-code split matters for drop-in fidelity: a client library that treats `401` as
+"re-authenticate" and `400` as "fatal configuration error" would take a different branch
+under the old behaviour.
 
 By contrast, `POST /oauth/deauthorize` and `/api/v3/*` with a bogus bearer token return
 `401` with `{"message":"Authorization Error","errors":[{"resource":"Athlete","field":"access_token","code":"invalid"}]}`
-— confirming that the `400`/`401` split is per-endpoint-family, not global.
+— a third shape, and one the proxy passes straight through.
 
 ---
 

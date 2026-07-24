@@ -555,7 +555,7 @@ func TestTokenEndpointCredentialFaults(t *testing.T) {
 	})
 	t.Run("wrong client_secret", func(t *testing.T) {
 		res := h.exchange(clientAID, "wrong-secret", code)
-		assertFault(t, res, http.StatusBadRequest, faultInvalidClientSecret)
+		assertFault(t, res, http.StatusUnauthorized, faultInvalidClientSecret)
 	})
 	t.Run("malformed code", func(t *testing.T) {
 		res := h.exchange(clientAID, clientASecret, "k2.garbage.garbage")

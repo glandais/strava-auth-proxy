@@ -144,9 +144,11 @@ main's wiring are not automatically covered. Update both.
 the standard library. `golang.org/x/oauth2` is permitted solely as a test dependency of
 `internal/integration`; `internal/integration/deps_test.go` enforces this.
 
-**Open question in the contract.** Bad credentials on the token endpoints return `400` — verified
-live against real Strava, byte-identical to the `invalid_client_id` golden. What is *not* settled is
-whether a valid `client_id` with a wrong `client_secret` reports `"field":"client_secret"` (what
-this proxy currently does) or just `"field":"client_id"`. Settling it needs a real Strava app id;
-the one-command check and the change to make are in `README.md`. `fakestrava` mirrors the current
-choice, so the test suite cannot detect this drift on its own.
+**The credential faults are asymmetric on purpose.** Verified live against a real Strava
+application id: an unknown `client_id` is `400 "Bad Request"` naming the field, a known
+`client_id` with a wrong secret is `401 "Authorization Error"` with an *empty* field, and
+`/oauth/revoke` is `401` with an *empty errors array* for both. Three different shapes, all
+reproduced by `internal/fault` and mirrored by `internal/fakestrava`. Do not "fix" the
+inconsistency — client libraries branch on that status, and the proxy is deliberately an oracle
+for which virtual `client_id`s exist because real Strava is. Full probe log in
+`docs/STRAVA-CONTRACT.md`.

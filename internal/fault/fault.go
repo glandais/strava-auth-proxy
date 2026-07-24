@@ -70,12 +70,19 @@ func WriteInvalidClientID(w http.ResponseWriter) {
 	})
 }
 
-// WriteInvalidClientSecret reports a wrong virtual client_secret on a token
-// endpoint: 400 with resource Application, field client_secret.
+// WriteInvalidClientSecret reports a wrong virtual client_secret for a client
+// that does exist: 401 with Strava's "Authorization Error" message and an
+// entry whose field is deliberately empty.
+//
+// This is not symmetric with WriteInvalidClientID, and the asymmetry is real
+// Strava's, verified live (docs/STRAVA-CONTRACT.md): an unknown client_id is a
+// 400 "Bad Request" naming the field, while a known client_id with a wrong
+// secret is a 401 "Authorization Error" naming none. Client libraries branch on
+// that status, so the proxy reproduces it rather than tidying it up.
 func WriteInvalidClientSecret(w http.ResponseWriter) {
-	Write(w, http.StatusBadRequest, Fault{
-		Message: "Bad Request",
-		Errors:  []Error{{Resource: "Application", Field: "client_secret", Code: "invalid"}},
+	Write(w, http.StatusUnauthorized, Fault{
+		Message: "Authorization Error",
+		Errors:  []Error{{Resource: "Application", Field: "", Code: "invalid"}},
 	})
 }
 
@@ -88,12 +95,18 @@ func WriteInvalidCode(w http.ResponseWriter) {
 	})
 }
 
-// WriteUnauthorized reports bad HTTP Basic credentials on /oauth/revoke:
-// 401 with Strava's "Authorization Error" message.
+// WriteUnauthorized reports bad HTTP Basic credentials on /oauth/revoke: 401
+// with an empty errors array.
+//
+// Verified live: real Strava's /oauth/revoke answers
+// {"message":"Authorization Error","errors":[]} for both an unknown client_id
+// and a wrong secret, unlike the token endpoints, which distinguish the two.
+// Revoke therefore leaks nothing about which client_ids exist, and neither does
+// this.
 func WriteUnauthorized(w http.ResponseWriter) {
 	Write(w, http.StatusUnauthorized, Fault{
 		Message: "Authorization Error",
-		Errors:  []Error{{Resource: "Application", Field: "client_id", Code: "invalid"}},
+		Errors:  []Error{},
 	})
 }
 
