@@ -1,0 +1,52 @@
+# Compiled binaries and build output
+/strava-auth-proxy
+/dist/
+/build/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test and coverage artifacts
+*.test
+*.out
+coverage.*
+/testdata/tmp/
+
+# Go workspace files (machine-local, must not be committed)
+go.work
+go.work.sum
+
+# NOTE: testdata/fuzz/ is deliberately NOT ignored. `go test -fuzz` writes
+# failing inputs there and Go's convention is to commit them as regression
+# seeds; the cached working corpus lives in GOCACHE, not in the repo.
+
+# --- Local secrets and configuration artifacts ---
+# The real Strava application secret and the virtual client registry must never
+# be committed. clients.example.json is the committed template; anything else
+# matching these patterns is local.
+clients.json
+clients.*.json
+!clients.example.json
+*.local.json
+/secrets/
+/run/
+.env
+.env.*
+!.env.example
+
+# TLS material
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+
+# Editor / OS noise
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store

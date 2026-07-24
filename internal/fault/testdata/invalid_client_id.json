@@ -1,0 +1,1 @@
+{"message":"Bad Request","errors":[{"resource":"Application","field":"client_id","code":"invalid"}]}
