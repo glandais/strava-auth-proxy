@@ -18,9 +18,9 @@ jobs:
     name: Go build & tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           # Single source of truth for the toolchain version.
           go-version-file: go.mod
@@ -56,15 +56,15 @@ jobs:
     name: Docker image
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       # Build only — never pushed. This is what catches breakage the Go tests
       # cannot see: the FROM scratch runtime stage, CGO_ENABLED=0, and the
       # ca-certificates.crt copy.
       - name: Build image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
