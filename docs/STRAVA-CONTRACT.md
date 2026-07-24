@@ -177,7 +177,7 @@ Known auth-specific instances (observed/canonical behavior):
 
 | Situation | Status | Body |
 |---|---|---|
-| Invalid `client_id`/`client_secret` on token endpoints | 401 | `{"message":"Bad Request","errors":[{"resource":"Application","field":"client_id","code":"invalid"}]}` (or `"field":"client_secret"`) |
+| Invalid `client_id`/`client_secret` on token endpoints | **400** (verified, see below) | `{"message":"Bad Request","errors":[{"resource":"Application","field":"client_id","code":"invalid"}]}` |
 | Invalid/expired/reused authorization `code` | 400 | `{"message":"Bad Request","errors":[{"resource":"AuthorizationCode","field":"code","code":"invalid"}]}` |
 | Invalid/revoked refresh token | 400 | `{"message":"Bad Request","errors":[{"resource":"RefreshToken","field":"refresh_token","code":"invalid"}]}` |
 | Missing/expired/invalid access token on API call | 401 | `{"message":"Authorization Error","errors":[{"resource":"Athlete","field":"access_token","code":"invalid"}]}` |
@@ -185,6 +185,38 @@ Known auth-specific instances (observed/canonical behavior):
 | Rate limit exceeded | 429 | `{"message":"Rate Limit Exceeded","errors":[{"resource":"Application","field":"rate limit","code":"exceeded"}]}` |
 
 General status codes: 200 OK, 201 Created, 401 Unauthorized, 403 Forbidden, 404 Not Found, 429 Too Many Requests, 500 Server Error.
+
+### Live verification of the token-endpoint credential error (2026-07-24)
+
+Probed against real Strava with deliberately invalid values (no real credentials needed).
+Every one of the following returned **`400`** with a byte-identical body:
+
+```
+{"message":"Bad Request","errors":[{"resource":"Application","field":"client_id","code":"invalid"}]}
+```
+
+| Probe | Endpoint |
+|---|---|
+| unknown `client_id` + bogus `client_secret`, `grant_type=authorization_code` | `/api/v3/oauth/token` and `/oauth/token` |
+| unknown `client_id` + bogus `client_secret`, `grant_type=refresh_token` | `/oauth/token` |
+| `client_secret` omitted entirely | `/oauth/token` |
+| `grant_type` omitted / unknown `grant_type` | `/oauth/token` |
+| empty request body | `/oauth/token` |
+
+So the `401` recorded by one documentation source is wrong for these endpoints, and the
+proxy's `400` is correct. Two consequences worth noting:
+
+1. **Strava's token-endpoint credential error is generic.** A missing `client_id`, an
+   unknown `client_id`, a missing `client_secret` and a wrong `grant_type` all produce the
+   *same* `field: "client_id"` body. No probe was able to elicit `field: "client_secret"`.
+2. **Not settled:** whether a *valid* `client_id` with a wrong `client_secret` yields
+   `field: "client_secret"` — that case needs a real application id. See the note in
+   `README.md` for the one-command check and what to change if it turns out to be
+   `client_id`.
+
+By contrast, `POST /oauth/deauthorize` and `/api/v3/*` with a bogus bearer token return
+`401` with `{"message":"Authorization Error","errors":[{"resource":"Athlete","field":"access_token","code":"invalid"}]}`
+— confirming that the `400`/`401` split is per-endpoint-family, not global.
 
 ---
 

@@ -280,9 +280,25 @@ against a real client library.
 The authoritative design document is [`docs/DESIGN.md`](docs/DESIGN.md); the verified
 Strava wire contract is [`docs/STRAVA-CONTRACT.md`](docs/STRAVA-CONTRACT.md).
 
-> **Note on error status codes.** `docs/STRAVA-CONTRACT.md` §7 records `401` for bad
-> credentials on the token endpoints from one source and `400` from another. The
-> implementation uses **`400`** (per `DESIGN.md` §2.3's working assumption). Real
-> Strava's observed behaviour is the contract: if a live check settles on `401`, change
-> the two writers in `internal/fault/fault.go` and their goldens under
-> `internal/fault/testdata/`.
+> **Note on error status codes — verified 2026-07-24.** Bad credentials on the token
+> endpoints return **`400`**, not the `401` that one documentation source claimed. This was
+> checked against real Strava with deliberately invalid values; the response is byte-identical
+> to the proxy's `invalid_client_id` golden. Details of every probe are in
+> [`docs/STRAVA-CONTRACT.md`](docs/STRAVA-CONTRACT.md). No change was needed.
+>
+> One sub-case remains open, and it needs a **real** Strava application id to settle: whether
+> a *valid* `client_id` with a *wrong* `client_secret` reports `"field":"client_secret"` or
+> just `"field":"client_id"`. Every probe with an unknown id returned `client_id`, even when
+> `client_secret` was omitted entirely, which suggests Strava's error may be generic. Check it
+> with your own app id (the secret below is deliberately wrong, so nothing is exposed):
+>
+> ```sh
+> curl -sS -X POST https://www.strava.com/oauth/token \
+>   -d "client_id=<your real app id>&client_secret=deliberately-wrong&grant_type=refresh_token&refresh_token=x"
+> ```
+>
+> If it reports `client_id`, drop `WriteInvalidClientSecret` from
+> `internal/fault/fault.go` and have `internal/oauth/token.go` return the `client_id` fault
+> for both failure modes. That would also be a small security win: the proxy would stop
+> acting as an oracle for which virtual `client_id`s exist, and the constant-time secret
+> comparison would no longer be undercut by a response body that names the failing field.
