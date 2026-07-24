@@ -1,0 +1,48 @@
+version: 2
+
+updates:
+  # Go modules. The runtime dependency set is empty by design (see CLAUDE.md:
+  # `go list -deps ./cmd/strava-auth-proxy` must be stdlib only), so in practice
+  # this only ever moves golang.org/x/oauth2, the test-only dependency of
+  # internal/integration.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    groups:
+      go-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # Dockerfile. Only the golang:1.26-alpine build stage is updatable; the
+  # runtime stage is FROM scratch and has nothing to bump.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+
+  # GitHub Actions. No workflows are committed yet, so this is a no-op until one
+  # lands; keeping it here means action pins get maintained from day one.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
