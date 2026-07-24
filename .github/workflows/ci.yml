@@ -1,0 +1,115 @@
+name: CI
+
+# Pull requests only: the branch a PR targets gets validated by that PR, and
+# nothing here publishes an artifact, so there is nothing to run on push.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+# A force-push to a PR branch supersedes the previous run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go build & tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          # Single source of truth for the toolchain version.
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      # -race is the interesting run: the config is hot-swapped on SIGHUP while
+      # requests are in flight. It also covers the zero-third-party-dependency
+      # rule via internal/integration's TestProductionBinaryHasNoThirdPartyDependencies.
+      - name: Test
+        run: go test -race -count=1 ./...
+
+      # The envelope parser is fed attacker-controlled bytes; a short smoke run
+      # keeps the corpus honest without turning CI into a fuzzing farm.
+      - name: Fuzz the envelope parser (smoke)
+        run: go test -run '^$' -fuzz FuzzOpen -fuzztime 30s ./internal/seal/
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Build only — never pushed. This is what catches breakage the Go tests
+      # cannot see: the FROM scratch runtime stage, CGO_ENABLED=0, and the
+      # ca-certificates.crt copy.
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: strava-auth-proxy:ci
+          build-args: |
+            VERSION=ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Boot the image for real: a scratch image has no shell, so this is the
+      # only way to prove the binary is executable there and that the built-in
+      # HEALTHCHECK (which runs `strava-auth-proxy -healthcheck` against the
+      # loopback admin listener) actually reports healthy.
+      #
+      # The credentials are throwaway: nothing here talks to Strava.
+      - name: Smoke-test the image
+        run: |
+          set -euo pipefail
+          docker run -d --name ci-smoke \
+            -e STRAVA_CLIENT_ID=12345 \
+            -e STRAVA_CLIENT_SECRET=ci-not-a-real-secret \
+            -e PROXY_PUBLIC_URL=https://proxy.example \
+            -e PROXY_STATE_KEYS="k1=$(openssl rand -hex 32)" \
+            -e PROXY_CLIENTS_FILE=/etc/strava-auth-proxy/clients.json \
+            -e LISTEN_ADDR=":8443" \
+            -e ADMIN_ADDR="127.0.0.1:9090" \
+            -e DEV_ALLOW_HTTP=true \
+            -v "$PWD/clients.example.json:/etc/strava-auth-proxy/clients.json:ro" \
+            --read-only \
+            strava-auth-proxy:ci
+
+          for _ in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' ci-smoke)
+            [ "$status" = healthy ] && break
+            [ "$status" = unhealthy ] && break
+            sleep 2
+          done
+
+          docker logs ci-smoke
+          if [ "$status" != healthy ]; then
+            echo "::error::container never became healthy (last status: $status)"
+            exit 1
+          fi
+
+      - name: Tear down
+        if: always()
+        run: docker rm -f ci-smoke || true
