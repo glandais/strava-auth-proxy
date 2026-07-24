@@ -1,0 +1,46 @@
+# Keep the build context to what the Dockerfile actually copies, and make it
+# impossible for local secrets to end up in a build layer.
+
+.git/
+.gitignore
+.dockerignore
+
+# Local secrets and configuration — never send these to the daemon.
+.env
+.env.*
+!.env.example
+clients.json
+clients.*.json
+!clients.example.json
+*.local.json
+secrets/
+run/
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+
+# Documentation and compose files play no part in the build.
+docs/
+*.md
+compose.yaml
+docker-compose.yml
+Dockerfile
+LICENSE
+
+# Build and test artifacts.
+dist/
+build/
+strava-auth-proxy
+*.test
+*.out
+coverage.*
+
+# Editor / OS noise.
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store

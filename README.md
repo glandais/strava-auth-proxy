@@ -101,6 +101,50 @@ public listener** otherwise, at two independent gates.
 Finally, on the real Strava application, set the **Authorization Callback Domain** to the
 proxy's host (`proxy.example`). That is what makes the interposed callback possible.
 
+## Running with Docker
+
+Two files hold everything local, and both are git-ignored with a committed template
+beside them:
+
+```sh
+cp .env.example .env                    # real Strava credentials, public URL, state keys
+cp clients.example.json clients.json    # your virtual clients
+docker compose up -d --build
+```
+
+The image is built `FROM scratch` — 7.7 MB, a static binary plus the CA bundle it needs
+to reach Strava over TLS, nothing else. It runs as UID 65532 with a read-only root
+filesystem, all capabilities dropped and `no-new-privileges`, because the process writes
+nothing to disk and binds only unprivileged ports.
+
+Since there is no shell in the image for Docker's `HEALTHCHECK` to call, the binary
+probes itself:
+
+```sh
+strava-auth-proxy -healthcheck      # GET /healthz on ADMIN_ADDR; exit 0 iff 200
+```
+
+That is also why the admin listener can stay on `127.0.0.1`: the probe runs inside the
+container's own network namespace. Publish it (`ADMIN_ADDR=0.0.0.0:9090` plus the
+commented-out port mapping) only if you scrape `/metrics` from outside — it exposes no
+secrets, but it is not authenticated.
+
+After editing `clients.json`, reload the registry without dropping a connection:
+
+```sh
+docker compose kill -s HUP proxy
+```
+
+The container keeps running and logs `config reloaded`; an invalid file leaves the
+previous configuration live and logs the validation error instead.
+
+By default `.env` sets `DEV_ALLOW_HTTP=true`, which assumes the container sits behind a
+TLS-terminating ingress. **The hop between that ingress and the container carries
+authorization codes and virtual client secrets in clear text**, so this is only safe when
+nothing untrusted can reach the published port. To have the proxy terminate TLS itself,
+uncomment the TLS block in `.env.example` and the matching volumes in `compose.yaml`, and
+drop `DEV_ALLOW_HTTP`.
+
 ## Configuration reference
 
 Every variable marked *(±`_FILE`)* also honours a `<NAME>_FILE` sibling naming a file

@@ -1,0 +1,73 @@
+# Run with: docker compose up -d --build
+#
+# Prerequisites (both are git-ignored; templates are committed next to them):
+#   cp .env.example .env                     then fill in the real Strava credentials
+#   cp clients.example.json clients.json     then declare your virtual clients
+#
+# Reload the virtual client registry without downtime, after editing clients.json:
+#   docker compose kill -s HUP proxy
+
+services:
+  proxy:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-dev}
+    image: strava-auth-proxy:${VERSION:-dev}
+    restart: unless-stopped
+
+    # Real Strava credentials, PROXY_PUBLIC_URL and the state key ring.
+    env_file: .env
+
+    environment:
+      # Container-internal paths and addresses. These are properties of the
+      # deployment, not of the operator's secrets, so they live here rather
+      # than in .env.
+      PROXY_CLIENTS_FILE: /etc/strava-auth-proxy/clients.json
+      LISTEN_ADDR: ":8443"
+      # The admin listener stays on loopback: the healthcheck runs inside this
+      # container's network namespace and reaches it there. Set it to
+      # 0.0.0.0:9090 and publish the port below only if you scrape /metrics
+      # from outside — it exposes no secrets, but it is not authenticated.
+      ADMIN_ADDR: "127.0.0.1:9090"
+
+    ports:
+      - "${PROXY_PORT:-8443}:8443"
+      # - "${ADMIN_PORT:-9090}:9090"   # only with ADMIN_ADDR=0.0.0.0:9090
+
+    volumes:
+      # The virtual client registry. Read-only: the proxy only ever reads it,
+      # including on SIGHUP reload.
+      - ./clients.json:/etc/strava-auth-proxy/clients.json:ro
+      # TLS material, if the proxy terminates TLS itself rather than sitting
+      # behind an ingress. Point TLS_CERT_FILE/TLS_KEY_FILE at these paths in
+      # .env and drop DEV_ALLOW_HTTP.
+      # - ./tls/fullchain.pem:/etc/strava-auth-proxy/tls/fullchain.pem:ro
+      # - ./tls/privkey.pem:/etc/strava-auth-proxy/tls/privkey.pem:ro
+
+    # The process writes nothing to disk and needs no privileges: it opens two
+    # listening sockets above 1024 and makes outbound HTTPS calls.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+    # HEALTHCHECK is defined in the image (the binary probes itself, since a
+    # scratch image has no shell). Repeated here only to give compose a
+    # start_period long enough for a cold start under load.
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/strava-auth-proxy", "-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+    # SIGTERM triggers graceful shutdown; give in-flight /api/v3 streams time
+    # to drain (the server's own shutdown timeout is 20s).
+    stop_grace_period: 30s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

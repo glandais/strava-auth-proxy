@@ -70,6 +70,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// The container images have no shell for Docker's HEALTHCHECK to call, so
+	// the binary probes itself. This runs instead of the server.
+	if len(os.Args) > 1 && os.Args[1] == healthcheckFlag {
+		if err := healthcheck(ctx, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "healthcheck:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := run(ctx); err != nil {
 		slog.Default().Error("fatal", "error", err)
 		os.Exit(1)

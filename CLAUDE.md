@@ -41,6 +41,13 @@ go run ./cmd/strava-auth-proxy
 `SIGHUP` reloads the config (validate-then-swap; the old config stays live if the new one is
 invalid). Admin port serves `/healthz`, `/readyz` and expvar `/metrics`.
 
+Docker (`.env` and `clients.json` are git-ignored; copy the committed `.example` templates):
+
+```sh
+docker compose up -d --build
+docker compose kill -s HUP proxy    # reload clients.json without downtime
+```
+
 ## Architecture
 
 ### The two sealed envelopes
@@ -99,6 +106,15 @@ retry burns the code. Don't add retries or a circuit breaker.
   `SetXForwarded`.
 - `internal/fault` is the single source of every proxy-minted error body, golden-tested under
   `internal/fault/testdata/`. Add error cases there, not inline in handlers.
+
+### Container image
+
+`FROM scratch`, so two things must hold or the image breaks in ways the Go tests cannot catch:
+the build must stay `CGO_ENABLED=0` (pure-Go net/user resolvers, no libc to link against), and
+`/etc/ssl/certs/ca-certificates.crt` must keep being copied from the build stage — without it every
+outbound HTTPS call to Strava fails at handshake. There is no shell, so `HEALTHCHECK` invokes
+`strava-auth-proxy -healthcheck`, which probes `/healthz` on `ADMIN_ADDR` (see `healthcheck.go`);
+that is what lets the admin listener stay bound to loopback.
 
 ### Invariants worth re-checking after any edit
 
